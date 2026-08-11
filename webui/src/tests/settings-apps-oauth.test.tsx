@@ -103,8 +103,7 @@ describe("SettingsView Apps catalog", () => {
     vi.stubGlobal("open", open);
 
     renderSettingsView({ initialSection: "apps" });
-    fireEvent.click(await screen.findByRole("button", { name: "MCP" }));
-    expect(screen.getByText("MCP tools")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "All apps" }));
     const connectButton = await screen.findByRole("button", { name: "Connect Xmind" });
     expect(connectButton).toHaveTextContent("Connect");
     fireEvent.click(connectButton);
@@ -167,17 +166,17 @@ describe("SettingsView Apps catalog", () => {
     requestMutationMock.mockRejectedValueOnce(new Error("Stopped after request assertion"));
 
     renderSettingsView({ initialSection: "apps" });
-    fireEvent.click(await screen.findByRole("button", { name: "Ready" }));
-    expect(await screen.findByText("No tools are ready yet.")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Installed" }));
+    expect(await screen.findByText("No apps installed yet.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Xmind" })).not.toBeInTheDocument();
 
-    fireEvent.click(await screen.findByRole("button", { name: "MCP" }));
+    fireEvent.click(await screen.findByRole("button", { name: "All apps" }));
 
     const heading = await screen.findByRole("heading", { name: "Xmind" });
     const row = heading.closest("article");
     expect(row).not.toBeNull();
-    expect(row?.parentElement).toHaveClass("xl:grid-cols-2");
-    expect(within(row as HTMLElement).queryByText("MCP")).not.toBeInTheDocument();
+    expect(row?.parentElement?.parentElement).toHaveClass("xl:grid-cols-2");
+    expect(within(row as HTMLElement).getByText("MCP")).toBeInTheDocument();
     const failed = within(row as HTMLElement).getByText("Connection failed.");
     expect(failed.closest("button")).toBeNull();
     expect(failed.closest("p")?.querySelector(".lucide-triangle-alert")).not.toBeNull();
@@ -240,7 +239,7 @@ describe("SettingsView Apps catalog", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderSettingsView({ initialSection: "apps" });
-    fireEvent.click(await screen.findByRole("button", { name: "MCP" }));
+    fireEvent.click(await screen.findByRole("button", { name: "All apps" }));
 
     expect(await screen.findByRole("button", { name: "Xmind: Connecting…" }))
       .toHaveTextContent("Connecting…");
@@ -251,7 +250,7 @@ describe("SettingsView Apps catalog", () => {
     )).toHaveTextContent("Connected.");
     expect(mcpPresetRequests).toBe(2);
 
-    fireEvent.click(screen.getByRole("button", { name: "Ready" }));
+    fireEvent.click(screen.getByRole("button", { name: "Installed" }));
     expect(await screen.findByRole("heading", { name: "Xmind" })).toBeInTheDocument();
   });
 
@@ -296,7 +295,7 @@ describe("SettingsView Apps catalog", () => {
     });
 
     renderSettingsView({ initialSection: "apps" });
-    fireEvent.click(await screen.findByRole("button", { name: "MCP" }));
+    fireEvent.click(await screen.findByRole("button", { name: "All apps" }));
     expect(await screen.findByText("Connection failed.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Reconnect team-docs" }));
@@ -309,7 +308,7 @@ describe("SettingsView Apps catalog", () => {
     const connected = await screen.findByRole("button", { name: "team-docs: Connected." });
     expect(connected).toHaveTextContent("Connected.");
     expect(connected.querySelector(".lucide-check")).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Ready" }));
+    fireEvent.click(screen.getByRole("button", { name: "Installed" }));
     const readyHeading = await screen.findByRole("heading", { name: "team-docs" });
     expect(within(readyHeading.closest("article") as HTMLElement).getByText("MCP"))
       .toBeInTheDocument();
@@ -354,7 +353,7 @@ describe("SettingsView Apps catalog", () => {
     });
 
     renderSettingsView({ initialSection: "apps" });
-    fireEvent.click(await screen.findByRole("button", { name: "MCP" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add custom" }));
     fireEvent.click(await screen.findByRole("button", { name: "Custom" }));
 
     expect(screen.queryByText("Authentication")).not.toBeInTheDocument();
@@ -400,6 +399,7 @@ describe("SettingsView Apps catalog", () => {
       expect(values).not.toHaveProperty("headers");
       expect(saveCall?.[2]).toBe(20_000);
     });
+    fireEvent.click(screen.getByRole("button", { name: "All apps" }));
     expect(await screen.findByRole("button", { name: "Connect team-mcp" }))
       .toBeInTheDocument();
     expect(
@@ -482,7 +482,7 @@ describe("SettingsView Apps catalog", () => {
     vi.stubGlobal("open", vi.fn(() => popup));
 
     renderSettingsView({ initialSection: "apps" });
-    fireEvent.click(await screen.findByRole("button", { name: "MCP" }));
+    fireEvent.click(await screen.findByRole("button", { name: "All apps" }));
     fireEvent.click(await screen.findByRole("button", { name: "Connect Xmind" }));
 
     const callbackInput = await screen.findByRole("textbox", { name: "Full callback URL" });
@@ -551,7 +551,7 @@ describe("SettingsView Apps catalog", () => {
     vi.stubGlobal("open", vi.fn(() => popup));
 
     renderSettingsView({ initialSection: "apps" });
-    fireEvent.click(await screen.findByRole("button", { name: "MCP" }));
+    fireEvent.click(await screen.findByRole("button", { name: "All apps" }));
     fireEvent.click(await screen.findByRole("button", { name: "Connect Xmind" }));
 
     const cancelButton = await screen.findByRole("button", { name: "Cancel" });
@@ -609,7 +609,7 @@ describe("SettingsView Apps catalog", () => {
     });
 
     renderSettingsView({ initialSection: "apps" });
-    fireEvent.click(await screen.findByRole("button", { name: "MCP" }));
+    fireEvent.click(await screen.findByRole("button", { name: "All apps" }));
     fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
 
     await waitFor(() => expect(requestMutationMock).toHaveBeenCalledWith(
@@ -657,7 +657,7 @@ describe("SettingsView Apps catalog", () => {
     vi.stubGlobal("open", open);
 
     renderSettingsView({ initialSection: "apps" });
-    fireEvent.click(await screen.findByRole("button", { name: "MCP" }));
+    fireEvent.click(await screen.findByRole("button", { name: "All apps" }));
     fireEvent.click(await screen.findByRole("button", { name: "Connect Xmind" }));
 
     const continueButton = await screen.findByRole("button", { name: "Continue sign-in" });
@@ -727,7 +727,7 @@ describe("SettingsView Apps catalog", () => {
     vi.stubGlobal("open", vi.fn(() => popup));
 
     renderSettingsView({ initialSection: "apps" });
-    fireEvent.click(await screen.findByRole("button", { name: "MCP" }));
+    fireEvent.click(await screen.findByRole("button", { name: "All apps" }));
     fireEvent.click(await screen.findByRole("button", { name: "Connect Xmind" }));
 
     await waitFor(() => expect(statusCalls).toBe(1), { timeout: 2000 });
