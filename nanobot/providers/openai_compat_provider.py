@@ -20,6 +20,7 @@ from ipaddress import ip_address
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlparse
 
+from langfuse import get_client
 from loguru import logger
 from pydantic.alias_generators import to_snake
 
@@ -57,6 +58,37 @@ if TYPE_CHECKING:
 AsyncOpenAI: Any = None
 
 _GEMINI_SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator"
+
+
+def _update_generation_from_llm_response(
+    generation: Any,
+    result: "LLMResponse",
+    *,
+    model: str | None,
+) -> None:
+    """Map a completed LLMResponse onto the active Langfuse generation.
+
+    Shared by every call site in this provider so usage/output reporting
+    stays consistent regardless of which API path (responses vs chat
+    completions) produced the result.
+    """
+    usage = result.usage or {}
+    usage_details = (
+        {
+            "input": usage.get("prompt_tokens", 0),
+            "output": usage.get("completion_tokens", 0),
+            "total": usage.get("total_tokens", 0),
+        }
+        if usage
+        else None
+    )
+    generation.update(
+        model=model,
+        output=result.content,
+        usage_details=usage_details,
+        level="ERROR" if result.finish_reason == "error" else "DEFAULT",
+        status_message=result.error_kind or result.error_type if result.finish_reason == "error" else None,
+    )
 
 
 def _is_hosted_web_search_type(value: object) -> bool:
@@ -1901,49 +1933,61 @@ class OpenAICompatProvider(LLMProvider):
         provider_context: ProviderCallContext | None = None,
     ) -> LLMResponse:
         client = await self._ensure_client()
-        try:
-            if self._should_use_responses_api(model, reasoning_effort):
-                try:
-                    body = self._build_responses_body(
-                        messages, tools, model, max_tokens, temperature,
-                        reasoning_effort, tool_choice,
-                        provider_context,
-                    )
-                    responses_raw = await self._create_response_with_compaction_fallback(
-                        client,
-                        body,
-                    )
-                    result = parse_response_output(
-                        responses_raw,
-                        state_provider=self._responses_state_provider(),
-                        state_model=str(body["model"]),
-                        state_input_items=cast(list[dict[str, Any]], body["input"]),
-                    )
-                    self._record_responses_success(model, reasoning_effort)
-                    return result
-                except Exception as responses_error:
-                    if self._spec and self._spec.name == "github_copilot":
-                        # Copilot gateway exposes GPT-5/o-series only via /responses;
-                        # falling back to /chat/completions cannot succeed and would
-                        # hide the real error.
-                        raise
-                    if self._responses_is_required():
-                        raise
-                    if not self._should_fallback_from_responses_error(responses_error):
-                        raise
-                    self._record_responses_failure(model, reasoning_effort)
+        langfuse = get_client()
+        with langfuse.start_as_current_observation(
+            as_type="generation",
+            name="nanobot-chat",
+            model=model,
+            input=messages,
+        ) as generation:
+            try:
+                if self._should_use_responses_api(model, reasoning_effort):
+                    try:
+                        body = self._build_responses_body(
+                            messages, tools, model, max_tokens, temperature,
+                            reasoning_effort, tool_choice,
+                            provider_context,
+                        )
+                        responses_raw = await self._create_response_with_compaction_fallback(
+                            client,
+                            body,
+                        )
+                        result = parse_response_output(
+                            responses_raw,
+                            state_provider=self._responses_state_provider(),
+                            state_model=str(body["model"]),
+                            state_input_items=cast(list[dict[str, Any]], body["input"]),
+                        )
+                        self._record_responses_success(model, reasoning_effort)
+                        _update_generation_from_llm_response(generation, result, model=model)
+                        return result
+                    except Exception as responses_error:
+                        if self._spec and self._spec.name == "github_copilot":
+                            # Copilot gateway exposes GPT-5/o-series only via /responses;
+                            # falling back to /chat/completions cannot succeed and would
+                            # hide the real error.
+                            raise
+                        if self._responses_is_required():
+                            raise
+                        if not self._should_fallback_from_responses_error(responses_error):
+                            raise
+                        self._record_responses_failure(model, reasoning_effort)
 
-            kwargs = self._build_kwargs(
-                messages, tools, model, max_tokens, temperature,
-                reasoning_effort, tool_choice,
-            )
-            chat_raw = cast(
-                Any,
-                await client.chat.completions.create(**kwargs),
-            )
-            return self._parse(chat_raw)
-        except Exception as e:
-            return self._handle_error(e, spec=self._spec, api_base=self.api_base)
+                kwargs = self._build_kwargs(
+                    messages, tools, model, max_tokens, temperature,
+                    reasoning_effort, tool_choice,
+                )
+                chat_raw = cast(
+                    Any,
+                    await client.chat.completions.create(**kwargs),
+                )
+                result = self._parse(chat_raw)
+                _update_generation_from_llm_response(generation, result, model=model)
+                return result
+            except Exception as e:
+                result = self._handle_error(e, spec=self._spec, api_base=self.api_base)
+                _update_generation_from_llm_response(generation, result, model=model)
+                return result
 
     async def chat_stream(
         self,
