@@ -1,0 +1,126 @@
+# Reference configuration for a MAMA-centered deployment.
+# Exact option names must be translated to the current MAMA OS config schema;
+# this file is the target ownership and policy contract, not an upstream patch.
+
+runtime:
+  owner: mama-os
+  daemon:
+    command: mama start
+    bind: 127.0.0.1
+    port: 3847
+    viewer_path: /viewer
+    restart_policy: always
+  scheduler:
+    enabled: true
+    trigger_loop: true
+    max_concurrent_runs: 4
+  transaction:
+    state_machine: obsidian_world_v2
+    id_field: transaction_id
+    idempotency_required: true
+    append_only_events: true
+    effect_ledger_required: true
+    default_review_state: needs_review
+
+memory:
+  structured:
+    owner: mama-core
+    database: ${MAMA_DB_PATH:-~/.claude/mama-memory.db}
+    retrieval: hybrid_vector_lexical
+    provenance: required
+    graph_edges: [supersedes, builds_on, debates, synthesizes]
+    scopes: [project, channel, user, global]
+  durable_markdown:
+    owner: obsidian-projection
+    vault_root: ${OBSIDIAN_VAULT_ROOT}
+    write_mode: controlled
+    require_transaction_id: true
+    require_content_hash: true
+    allow_worker_direct_write: false
+  mcp:
+    server_package: '@jungjaehoon/mama-server'
+    transport: stdio
+    allowed_tools:
+      - search
+      - save
+      - update
+      - search_decisions_and_contracts
+      - case_timeline_range
+    write_capability: transaction-writer-only
+
+connectors:
+  owner: mama-os
+  enabled: [email]
+  email:
+    intake_mode: normalized-envelope
+    duplicate_key: provider:message_id
+    reply_mode: explicit-delivery-lane
+  obsidian:
+    mode: source-and-projection
+    read_scope: configured-vault-roots
+    write_scope: configured-vault-roots
+
+workers:
+  default_owner: mama-os
+  nanobot:
+    enabled: true
+    role: bounded-channel-adapter
+    endpoint: http://127.0.0.1:3970
+    protocol: mama-worker-task-v1
+    receives:
+      - task_id
+      - transaction_id
+      - step_id
+      - objective
+      - scoped_context
+      - allowed_capabilities
+      - output_schema
+      - lease
+    may_call:
+      - public_url_fetch
+      - model_inference
+      - approved_mcp_read
+    may_not:
+      - acquire_global_leases
+      - create_transactions
+      - write_mama_core_directly
+      - write_obsidian_directly
+      - send_external_messages
+      - change_policy_or_permissions
+    result_deadline_seconds: 300
+    retry_policy:
+      max_attempts: 3
+      backoff_seconds: [2, 8, 30]
+
+transaction_routes:
+  research_to_memory:
+    capabilities: [memory_read, public_url_fetch, worker_execute, memory_write_local]
+    steps:
+      - classify
+      - recall_mama_core
+      - read_obsidian_context
+      - dispatch_nanobot_worker
+      - validate_result
+      - save_mama_memory
+      - project_obsidian_note
+      - deliver_response
+  capture_only:
+    capabilities: [memory_write_local, memory_write_obsidian]
+    steps:
+      - classify
+      - validate_capture
+      - save_mama_memory
+      - project_obsidian_note
+      - deliver_response
+
+safety:
+  external_send_requires_explicit_permission: true
+  account_actions_disabled: true
+  unknown_effect_state: needs_review
+  secrets_in_memory_content: reject
+  raw_provider_payload_retention: encrypted_or_reference_only
+
+observability:
+  health_port: 3847
+  metrics: [transactions, duplicate_intake, step_retries, memory_reads, memory_writes, worker_failures, delivery_state]
+  redaction: [authorization, cookies, provider_tokens, raw_message_body]
