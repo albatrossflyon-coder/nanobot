@@ -218,12 +218,26 @@ def test_parse_chunks_dict_preserves_extra_content() -> None:
 
 # ── Model switching: stale extras shouldn't break other providers ─────
 
-def test_stale_extra_content_in_tool_calls_survives_sanitize() -> None:
-    """When switching from Gemini to OpenAI, extra_content inside tool_calls
-    should survive message sanitization (it lives inside the tool_call dict,
-    not at message level, so it bypasses _ALLOWED_MSG_KEYS filtering)."""
+def test_stale_extra_content_in_tool_calls_stripped_for_strict_schema_provider() -> None:
+    """When replaying history to a provider with a strict request schema
+    (Mistral, which routes devstral/codestral/ministral/magistral), Gemini's
+    extra_content (google.thought_signature) must be stripped from the wire
+    payload — it's only meaningful to Gemini's own endpoint, and Mistral
+    422s (extra_forbidden) on the unrecognized tool_call field. Persisted
+    session history is untouched by this: _sanitize_messages only shapes the
+    outbound request, so the signature is still available if the
+    conversation later switches back to Gemini. Providers without this quirk
+    (see test_openai_compat_preserves_message_level_reasoning_fields in
+    test_litellm_kwargs.py) keep preserving extra_content as before."""
     with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
-        provider = OpenAICompatProvider()
+        provider = OpenAICompatProvider(
+            spec=ProviderSpec(
+                name="mistral",
+                keywords=("mistral", "devstral"),
+                env_key="MISTRAL_API_KEY",
+                strip_foreign_tool_call_extra_content=True,
+            )
+        )
 
     messages = [
         {"role": "user", "content": "hi"},
@@ -243,7 +257,7 @@ def test_stale_extra_content_in_tool_calls_survives_sanitize() -> None:
 
     sanitized = provider._sanitize_messages(messages)
 
-    assert sanitized[1]["tool_calls"][0]["extra_content"] == GEMINI_EXTRA
+    assert "extra_content" not in sanitized[1]["tool_calls"][0]
 
 
 # ── Replay to Gemini: preserve or backfill thought signatures ─────────

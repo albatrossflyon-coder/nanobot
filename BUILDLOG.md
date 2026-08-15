@@ -40,6 +40,24 @@ Closed the one gap the PR's own description disclosed as out-of-scope: `_detect_
 
 **Verified:** `tests/agent/test_runner_safety.py` 13/13 passed, `ruff check` clean, `basedpyright --strict` clean, `vuln-hunter scan_diff` clean. Full suite: 5915 passed, 2 pre-existing failures unrelated (see next entry), 44 skipped.
 
+## 2026-08-15 12:07 AM CDT — Fixed the Gemini→devstral 422 thought_signature bug
+
+**Status: fixed, unit-tested, full suite clean (no new failures) — committed and pushed to `fork`.**
+
+**Context:** after the 2026-08-13 Gemini→devstral-2512 primary-model swap, the `email:albatrossflyon1@gmail.com` session's stored history carried Gemini's `extra_content`/`google.thought_signature` field on old tool_calls. Every replay attempt against devstral 422'd (`extra_forbidden: Extra inputs are not permitted`), confirmed live in `gateway.log` at 2026-08-14 12:08:49. This meant nanobot could not process any request in that session at all — every turn errored out.
+
+**Root cause:** `devstral` is a keyword on the `mistral` `ProviderSpec` (`nanobot/providers/registry.py`), and Mistral validates its request schema strictly, rejecting unrecognized fields on tool_calls (the same reason `strip_history_reasoning_content` already exists for `reasoning_content`). Gemini's `extra_content` is only meaningful to Gemini's own endpoint — replaying it verbatim to Mistral is what triggered the 422.
+
+**Fix:** added a new `strip_foreign_tool_call_extra_content: bool = False` field to `ProviderSpec` (same declarative pattern as `strip_history_reasoning_content`), set `True` on the Mistral spec entry, and gated a strip of `extra_content` from tool_calls in `OpenAICompatProvider._sanitize_messages` behind that flag. Scoped specifically to Mistral, not "any non-Gemini provider" — persisted session history is untouched either way (`_sanitize_messages` only shapes the outbound wire payload), so a future switch back to Gemini still has the signature available.
+
+**Real gotcha caught mid-fix:** the first version of this fix stripped `extra_content` for *any* non-Gemini spec, which broke an existing test (`test_openai_compat_preserves_message_level_reasoning_fields` in `tests/providers/test_litellm_kwargs.py`) that deliberately asserts a generic/unknown provider *preserves* `extra_content` verbatim — that test passed on the clean baseline, confirming the blanket rule was wrong, not the test. Found `devstral` explicitly listed as a `mistral` keyword and rescoped the fix to that spec specifically instead.
+
+**Verification:** `tests/agent/test_gemini_thought_signature.py` (18/18, including a corrected test that now targets a Mistral-spec provider instead of a no-spec one) and `tests/providers/test_litellm_kwargs.py` all green. Full suite (`uv run pytest tests/`) run twice: first pass (broad fix) — 9 failed/4988 passed, 1 of those caused by the bug in my own first-draft fix. Second pass (corrected, Mistral-scoped fix) — 7 failed/4990 passed/44 skipped, all 7 pre-existing and unrelated (`test_session_location` x1, `test_exec_session_tools` x4 — timing-sensitive, `test_settings_api` x2 — the known timezone flake already tracked upstream, awaiting review on PR #5349). Zero new failures from this change. `vuln-hunter scan_diff`: 1 finding, a pre-existing SHA1 usage in `_normalize_tool_call_id` unrelated to this diff (already a known, accepted, non-blocking finding).
+
+**Files changed:** `nanobot/providers/registry.py`, `nanobot/providers/openai_compat_provider.py`, `tests/agent/test_gemini_thought_signature.py`.
+
+**Not yet done:** the live gateway process needs a restart to pick up this code change (a running Python process doesn't hot-reload); Render deployment prep for making the email channel always-on independent of the local machine (`render.yaml` currently only wires `ANTHROPIC_API_KEY` — the actual live setup needs `NANOBOT_GMAIL_APP_PASSWORD`, the devstral/Mistral key, `GEMINI_API_KEY`, `SCAN_API_KEY` too).
+
 ## 2026-08-12 03:35 CDT — Found and fixed a real test bug: token-usage timezone mismatch
 
 **Status: filed as [HKUDS/nanobot#5348](https://github.com/HKUDS/nanobot/issues/5348), fixed and opened as [HKUDS/nanobot#5349](https://github.com/HKUDS/nanobot/pull/5349), pushed to `fork/fix/token-usage-timezone-test-mismatch` (`ef60cb57`), remote SHA verified.**

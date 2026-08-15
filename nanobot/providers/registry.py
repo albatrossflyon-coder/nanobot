@@ -131,6 +131,14 @@ class ProviderSpec:
     # wire to keep thinking-mode history intact.
     strip_history_reasoning_content: bool = False
 
+    # Strip ``extra_content`` from tool_calls in history messages before
+    # sending. Mistral's strict schema rejects unrecognized tool_call fields
+    # (422 extra_forbidden) — this bites specifically when history carries a
+    # foreign provider's data, e.g. Gemini's google.thought_signature left
+    # over from before a model switch. Providers with lenient schemas ignore
+    # unknown fields and don't need this.
+    strip_foreign_tool_call_extra_content: bool = False
+
     @property
     def label(self) -> str:
         return self.display_name or self.name.title()
@@ -595,6 +603,7 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         implicit_reasoning_models=("magistral",),
         extract_thinking_blocks=True,
         strip_history_reasoning_content=True,
+        strip_foreign_tool_call_extra_content=True,
     ),
     # Step Fun (阶跃星辰): OpenAI-compatible API
     ProviderSpec(

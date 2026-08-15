@@ -717,6 +717,10 @@ class OpenAICompatProvider(LLMProvider):
         pending_tool_ids: dict[str, deque[str]] = {}
         force_string_content = bool(self._spec and self._spec.name == "deepseek")
         normalize_tool_ids = self._should_normalize_tool_call_ids()
+        strip_foreign_extra_content = bool(
+            self._spec
+            and getattr(self._spec, "strip_foreign_tool_call_extra_content", False)
+        )
         strip_reasoning = bool(
             self._spec
             and getattr(self._spec, "strip_history_reasoning_content", False)
@@ -772,6 +776,13 @@ class OpenAICompatProvider(LLMProvider):
                         normalized.append(tc)
                         continue
                     tc_clean = dict(cast(dict[str, Any], tc))
+                    if strip_foreign_extra_content:
+                        # extra_content (e.g. Gemini's google.thought_signature)
+                        # is only meaningful to the provider that produced it.
+                        # Persisted history keeps it intact for a future switch
+                        # back to Gemini; Mistral's strict schema 422s on the
+                        # unrecognized field when replaying it verbatim.
+                        tc_clean.pop("extra_content", None)
                     raw_id = tc_clean.get("id")
                     mapped_id = unique_tool_id(raw_id, used_ids, idx)
                     tc_clean["id"] = mapped_id
