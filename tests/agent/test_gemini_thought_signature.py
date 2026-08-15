@@ -506,3 +506,39 @@ def test_gemini_backfill_does_not_mutate_caller_history() -> None:
     assert sanitized[1]["tool_calls"][0]["extra_content"]["google"][
         "thought_signature"
     ] == "skip_thought_signature_validator"
+
+
+def test_strict_schema_strip_is_idempotent() -> None:
+    """Sanitizing an already-clean (post-strip) payload a second time must be a
+    no-op — re-running _sanitize_messages on its own output shouldn't error or
+    change the result."""
+    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+        provider = OpenAICompatProvider(
+            spec=ProviderSpec(
+                name="mistral",
+                keywords=("mistral", "devstral"),
+                env_key="MISTRAL_API_KEY",
+                strip_foreign_tool_call_extra_content=True,
+            )
+        )
+
+    messages = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "fn", "arguments": "{}"},
+                "extra_content": GEMINI_EXTRA,
+            }],
+        },
+        {"role": "tool", "content": "ok", "tool_call_id": "call_1"},
+        {"role": "user", "content": "thanks"},
+    ]
+
+    once = provider._sanitize_messages(messages)
+    twice = provider._sanitize_messages(once)
+
+    assert once == twice

@@ -10,6 +10,26 @@ Source of truth for what exists in this fork (`albatrossflyon-coder/nanobot`, tr
 
 ---
 
+## 2026-08-15 12:35 AM CDT — Added idempotence test for the Mistral extra_content strip
+
+**Status: added, passing, pushed.** One good idea salvaged from an external AI's proposed test script (which otherwise tested a nonexistent function/module and a message shape that doesn't match the real bug — hallucinated, not grounded in this codebase). `test_strict_schema_strip_is_idempotent` in `tests/agent/test_gemini_thought_signature.py` confirms `_sanitize_messages` is a no-op when run twice on its own output — real regression protection the earlier fix didn't explicitly cover. 19/19 tests pass.
+
+## 2026-08-15 12:20 AM CDT — Obsidian World integration planning docs added (research, no code)
+
+**Status: documentation only, not built — planning reference for the nanobot + Obsidian World integration.**
+
+Chris ran a multi-AI brainstorm (ChatGPT, Manus) on the "Obsidian World" architecture (see the shared vault's Obsidian World roadmap artifact and CC memory `2026-08-15-session-tic1.md`). Manus produced a detailed, evidence-based architecture comparison using a real "repository-architecture-comparison" methodology (lifecycle-stage mapping, seam classification: use-directly/wrap/replace/defer, Observed/Inferred/Recommended/Unknown evidence tiers). Saved 5 real output docs to `docs/obsidian-world-planning/`:
+
+- `HKUDS_nanobot vs. Obsidian World.md` — full transaction-lifecycle mapping (received→sanitized→classified→...→completed/failed) showing exactly which nanobot seams to use directly vs. wrap vs. replace.
+- `Nanobot Transaction Specification.md` — JSON-schema-level contract: inbound envelope, classification result, Obsidian note front matter, OB1 session state, event records, idempotency/retry rules.
+- `Nanobot ↔ Obsidian World API Bridge Specification.md` — full REST/MCP API contract (786 lines): intake, transaction control, OB1 sessions, obsidian-mind MCP gateway, worker API, delivery, health/observability, auth model, minimal first-slice endpoint set, worked end-to-end call sequence.
+- `Nanobot + obsidian-mind Implementation Roadmap.md` — 8 phases with exit criteria, a first-6-tickets table, and an explicit defer list (Octop, NotebookLM, understand-anything, more agents, redesigned dashboard).
+- `Repository comparison findings.md` — surfaced a new candidate repo, `breferrari/obsidian-mind` (Obsidian vault template giving Claude Code/Codex/Gemini CLI persistent memory via git-tracked notes + session-lifecycle hooks + MCP server) — not yet read/scanned per the standing security rule.
+- `repository-architecture-comparison-SKILL.md` — the actual skill definition behind this analysis (Chris pasted it directly after a mismatched/misnamed `.skill` file turned out to be unrelated Manus-internal noise). Genuinely well-designed, candidate for porting into Claude Code's own skill library for future "is there a repo like X" research — not yet ported.
+
+**Core architectural warning this analysis independently confirms** (matches ChatGPT's and Manus's earlier chat-based recommendations): nanobot's own internal memory/session history must never become a second source of truth alongside Obsidian. Every integration point in the API spec treats Obsidian as canonical and nanobot/OB1 as session-scoped.
+
+**Not started:** none of Phase 0 onward has been built. This is planning reference only.
 ## 2026-08-11 — Tool-call-markup-leak fix: 4 original gaps closed, 3 new gaps found by code-review
 
 **Context:** A model finalizing with no tools offered could still emit literal `<tool_call><function=...>` text instead of a real answer, and that raw markup could reach a real user-facing channel. Confirmed live twice today via real email to Chris (`~/.nanobot/logs/gateway.log`, 14:02 and 14:27 CDT — `Response to email:...: <tool_call>` at INFO level, meaning it was never blocked; the filter that should have caught it was built but never actually committed/active in the running gateway).
